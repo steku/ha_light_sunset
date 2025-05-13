@@ -1,0 +1,224 @@
+blueprint:
+  name: Parabolic Sunset Automation
+  description: Turn a light on based on a trigger. This is to match the senset and allow for a natural wind-down before sleep.
+  domain: automation
+  input:
+    pre_action:
+      name: 🎮 Pre Script Action
+      description: An action you want to perform before the lights turn on.
+      default: []
+      selector:
+        action: {}
+    trigger:
+      name: 🕒 Trigger
+      description:
+        Datetime helper or sensor for the alarm to start. Use time only and Workday sensor
+        to determine what days to run.
+      selector:
+        entity:
+          filter:
+            - domain:
+                - switch
+                - binary_sensor
+          multiple: false
+    sunset_script:
+      name: 📄 Script to trigger
+      description: Sunset Script
+      selector:
+        entity:
+          filter:
+            - domain:
+                - script
+          multiple: false
+    target_light:
+      name: 💡 Lights
+      description: The light(s) with kelvin
+      selector:
+        entity:
+          filter:
+            - domain:
+                - light
+          multiple: false
+    light_timeout:
+      name: ⏱️ Timeout
+      description: Light will turn off after this time on last run. Setting this to 0 will leave the light on.
+      default: 10
+      selector:
+        number:
+          min: 0.0
+          max: 60.0
+          step: 1.0
+          mode: slider
+    steps_per_minute:
+      name: 🏃‍♂️ Steps per minute for all runs
+      description:
+        Used for configuring percentage of each step for brightness and
+        color temperature
+      default: 12
+      selector:
+        number:
+          min: 1.0
+          max: 60.0
+          step: 1.0
+          mode: slider
+    start_brightness:
+      name: ⭐️ Start Brightness
+      description: Starting value for brightness
+      selector:
+        number:
+          min: 1.0
+          max: 100.0
+          step: 1.0
+          mode: slider
+      default: 90.0
+    start_kelvin_temp:
+      description: Start Kelvin value (warm) for 1st run
+      selector:
+        color_temp:
+          unit: kelvin
+      default: 5500
+      name: ☀️ Starting Kelvin
+    target_kelvin_1:
+      description: Target Kelvin value (cold) for the end of the first run
+      selector:
+        color_temp:
+          unit: kelvin
+      default: 4500
+      name: ☀️ Target Kelvin 1
+    min_brightness_1:
+      name: ⭐️ Maximum Brightness 1
+      description: Finish value for first run
+      selector:
+        number:
+          min: 1.0
+          max: 100.0
+          step: 1.0
+          mode: slider
+      default: 70
+    stage_length_1:
+      name: ⏰ Alarm Length 1
+      description: This is the start to finish time for the first run
+      selector:
+        number:
+          min: 1.0
+          max: 60.0
+          step: 1.0
+          mode: slider
+      default: 10
+    target_kelvin_2:
+      description: Target Kelvin value (cold) for second run
+      selector:
+        color_temp:
+          unit: kelvin
+      default: 4000
+      name: 🌗 Target Kelvin 2
+    min_brightness_2:
+      name: ⭐️ Maximum Brightness 2
+      description: Finish value for second run
+      selector:
+        number:
+          min: 1.0
+          max: 100.0
+          step: 1.0
+          mode: slider
+      default: 50
+    stage_length_2:
+      name: ⏰ Alarm length 2
+      description: This is the start to finish time for the second run
+      selector:
+        number:
+          min: 1.0
+          max: 60.0
+          step: 1.0
+          mode: slider
+      default: 10
+    target_kelvin_3:
+      description: Target Kelvin value (cold) for third run
+      selector:
+        color_temp:
+          unit: kelvin
+      default: 2500
+      name: 🌑 Target Kelvin 3
+    min_brightness_3:
+      name: ⭐️ Maximum Brightness 3
+      description: Finish value for third and final run
+      selector:
+        number:
+          min: 1.0
+          max: 100.0
+          step: 1.0
+          mode: slider
+      default: 0
+    stage_length_3:
+      name: ⏰ Alarm Length 3
+      description: This is the start to finish time for the third run
+      selector:
+        number:
+          min: 1.0
+          max: 60.0
+          step: 1.0
+          mode: slider
+      default: 5
+    post_action:
+      name: 🎮 Post Script Action
+      description: An action you want to run after the script has finished
+      default: []
+      selector:
+        action: {}
+  source_url: https://github.com/steku/ha_cercadian_alarm/blob/main/parabolic_alarm.yaml
+trigger:
+  - trigger: state
+    entity_id: !input trigger
+    to: on
+action:
+  - choose:
+      - conditions: []
+        sequence: !input pre_action
+  - action: light.turn_on
+    data:
+      color_temp_kelvin: !input start_kelvin_temp
+      brightness_pct: !input start_brightness
+      entity_id: !input target_light
+  - delay:
+      seconds: 5
+  - action: !input sunset_script
+    data:
+      target_kelvin: !input target_kelvin_1
+      start_kelvin: !input start_kelvin_temp
+      min_brightness_pct: !input min_brightness_1
+      stage_length: !input stage_length_1
+      steps_per_minute: !input steps_per_minute
+      light_timeout: 0
+      target_light: !input target_light
+  - if:
+      - condition: state
+        state: "on"
+        entity_id: !input target_light
+    then:
+      - action: !input sunset_script
+        data:
+          target_kelvin: !input target_kelvin_2
+          start_kelvin: !input target_kelvin_1
+          min_brightness_pct: !input min_brightness_2
+          stage_length: !input stage_length_2
+          steps_per_minute: !input steps_per_minute
+          light_timeout: 0
+          target_light: !input target_light
+  - if:
+      - condition: state
+        state: "on"
+        entity_id: !input target_light
+    then:
+      - action: !input sunset_script
+        data:
+          target_kelvin: !input target_kelvin_3
+          start_kelvin: !input target_kelvin_2
+          min_brightness_pct: !input min_brightness_3
+          stage_length: !input stage_length_3
+          steps_per_minute: !input steps_per_minute
+          light_timeout: !input light_timeout
+          target_light: !input target_light
+      - choose:
+          - conditions: []
+            sequence: !input post_action
+mode: single
