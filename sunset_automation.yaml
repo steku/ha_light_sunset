@@ -11,15 +11,15 @@ blueprint:
         action: {}
     trigger:
       name: 🕒 Trigger
-      description:
-        Datetime helper or sensor for the alarm to start. Use time only and Workday sensor
-        to determine what days to run.
+      description: Trigger for sunset to start.
       selector:
         entity:
           filter:
             - domain:
                 - switch
                 - binary_sensor
+                - input_boolean
+                - input_button
           multiple: false
     sunset_script:
       name: 📄 Script to trigger
@@ -72,21 +72,21 @@ blueprint:
           mode: slider
       default: 90.0
     start_kelvin_temp:
-      description: Start Kelvin value (warm) for 1st run
+      description: Start Kelvin value (cold) for 1st run
       selector:
         color_temp:
           unit: kelvin
       default: 5500
       name: ☀️ Starting Kelvin
     target_kelvin_1:
-      description: Target Kelvin value (cold) for the end of the first run
+      description: Target Kelvin value (warm) for the end of the first run
       selector:
         color_temp:
           unit: kelvin
       default: 4500
       name: ☀️ Target Kelvin 1
     min_brightness_1:
-      name: ⭐️ Maximum Brightness 1
+      name: ⭐️ Minimum Brightness 1
       description: Finish value for first run
       selector:
         number:
@@ -95,8 +95,8 @@ blueprint:
           step: 1.0
           mode: slider
       default: 70
-    stage_length_1:
-      name: ⏰ Alarm Length 1
+    stage_1_length:
+      name: ⏰ Stage 1 Length
       description: This is the start to finish time for the first run
       selector:
         number:
@@ -104,16 +104,16 @@ blueprint:
           max: 60.0
           step: 1.0
           mode: slider
-      default: 10
+      default: 5
     target_kelvin_2:
-      description: Target Kelvin value (cold) for second run
+      description: Target Kelvin value (warm) for second run
       selector:
         color_temp:
           unit: kelvin
       default: 4000
       name: 🌗 Target Kelvin 2
     min_brightness_2:
-      name: ⭐️ Maximum Brightness 2
+      name: ⭐️ Minimum Brightness 2
       description: Finish value for second run
       selector:
         number:
@@ -122,8 +122,8 @@ blueprint:
           step: 1.0
           mode: slider
       default: 50
-    stage_length_2:
-      name: ⏰ Alarm length 2
+    stage_2_length:
+      name: ⏰ Stage 2 length
       description: This is the start to finish time for the second run
       selector:
         number:
@@ -149,8 +149,8 @@ blueprint:
           step: 1.0
           mode: slider
       default: 0
-    stage_length_3:
-      name: ⏰ Alarm Length 3
+    stage_3_length:
+      name: ⏰ Stage 3 Length
       description: This is the start to finish time for the third run
       selector:
         number:
@@ -158,18 +158,26 @@ blueprint:
           max: 60.0
           step: 1.0
           mode: slider
-      default: 5
+      default: 10
     post_action:
       name: 🎮 Post Script Action
       description: An action you want to run after the script has finished
       default: []
       selector:
         action: {}
-  source_url: https://github.com/steku/ha_cercadian_alarm/blob/main/parabolic_alarm.yaml
+  source_url: https://github.com/steku/ha_light_sunset/blob/main/sunset_automation.yaml
+variables:
+  # stage_1_duration: !input stage_1_length
+  # stage_2_duration: !input stage_2_length
+  # stage_3_duration: !input stage_3_length
+  # full_duration: "{{ stage_1_duration + stage_2_duration + stage_3_duration }}"
+  # finish_time: "{{ as_timestamp(now()) + timedelta(minutes=full_duration) }}"
+  timeout: !input light_timeout
+  target_light: !input target_light
 trigger:
   - trigger: state
     entity_id: !input trigger
-    to: on
+    to: "on"
 action:
   - choose:
       - conditions: []
@@ -186,9 +194,8 @@ action:
       target_kelvin: !input target_kelvin_1
       start_kelvin: !input start_kelvin_temp
       min_brightness_pct: !input min_brightness_1
-      stage_length: !input stage_length_1
+      stage_length: !input stage_1_length
       steps_per_minute: !input steps_per_minute
-      light_timeout: 0
       target_light: !input target_light
   - if:
       - condition: state
@@ -200,9 +207,8 @@ action:
           target_kelvin: !input target_kelvin_2
           start_kelvin: !input target_kelvin_1
           min_brightness_pct: !input min_brightness_2
-          stage_length: !input stage_length_2
+          stage_length: !input stage_2_length
           steps_per_minute: !input steps_per_minute
-          light_timeout: 0
           target_light: !input target_light
   - if:
       - condition: state
@@ -214,10 +220,30 @@ action:
           target_kelvin: !input target_kelvin_3
           start_kelvin: !input target_kelvin_2
           min_brightness_pct: !input min_brightness_3
-          stage_length: !input stage_length_3
+          stage_length: !input stage_3_length
           steps_per_minute: !input steps_per_minute
-          light_timeout: !input light_timeout
           target_light: !input target_light
+        response_variable: result
+  # - delay:
+  #     seconds: 3
+  - if:
+      - condition: and
+        conditions:
+          - condition: template
+            value_template: "{{ timeout != 0 }}"
+          - condition: template
+            value_template: "{{ result.complete }}"
+    then:
+      - delay:
+          minutes: "{{ timeout }}"
+      - data: {}
+        target:
+          entity_id: "{{ target_light }}"
+        action: light.turn_off
+  - if:
+      - condition: template
+        value_template: "{{ result.complete }}"
+    then:
       - choose:
           - conditions: []
             sequence: !input post_action

@@ -3,7 +3,7 @@ blueprint:
   author: steriku
   description: >
     Campanion script sunset automation blueprint.
-  source_url: https://github.com/steku/ha_cercadian_alarm/blob/main/blueprint_parabolic_alarm_script.yaml
+  source_url: https://github.com/steku/ha_light_sunset/blob/main/sunset_script.yaml
   domain: script
   homeassistant:
     min_version: 2024.9.0
@@ -43,7 +43,7 @@ fields:
         min: 1
         max: 60
     default: 10
-    name: Alarm Length
+    name: Stage Length
   steps_per_minute:
     description: How many steps per minute
     selector:
@@ -59,27 +59,13 @@ fields:
         filter:
           domain: light
     name: Target Light
-  # light_timeout:
-  #   description: >-
-  #     Minutes to delay after Max Brightness has been reached to turn the light
-  #     back off. Value of 0 disables the timeout
-  #   selector:
-  #     number:
-  #       min: 0
-  #       max: 60
-  #   default: 5
-  #   name: Light Timeout
 variables:
   steps: "{{ stage_length * steps_per_minute }}"
-  min_brightness: |-
-    {% if states(target_light) == 'off' %}
-      3
-    {% else %}
-      {{ state_attr(target_light, 'brightness') }}
-    {% endif %}
+  max_brightness: |-
+    {{ state_attr(target_light, 'brightness') }}
   min_brightness: "{{ min_brightness_pct * 2.55 }}"
   kelvin_step: "{{ (target_kelvin - start_kelvin) / steps }}"
-  bright_step: "{{ (min_brightness - min_brightness) / steps }}"
+  bright_step: "{{ (max_brightness - min_brightness) / steps }}"
   start_time: "{{ as_timestamp(now()) }}"
   individual_step: "{{ 60 / steps_per_minute }}"
 sequence:
@@ -102,17 +88,21 @@ sequence:
       sequence:
         - variables:
             steps_to_now: |-
-              {{ ((as_timestamp(now()) - start_time) / individual_step) |
-                round(0, "ceil") }}
-            brightness: >-
-              {{ min_brightness - (bright_step * steps_to_now) | round(0,
-              'ceil') }}
-            kelvin: "{{ start_kelvin - (kelvin_step * steps_to_now) }}"
+              {{ ((as_timestamp(now()) - start_time) / individual_step) | round(0, "ceil") }}
+            brightness: |-
+              {% if max_brightness - (bright_step * steps_to_now) < 0 %}
+              0
+              {% else %}
+              {{ max_brightness - (bright_step * steps_to_now) | round(0,'ceil') }}
+              {% endif %}
+            kelvin: "{{ start_kelvin + (kelvin_step * steps_to_now) }}"
         - delay:
             seconds: "{{ individual_step }}"
         - if:
-            - condition: template
-              value_template: "{{ is_state(target_light, 'on') }}"
+            - condition: and
+              conditions:
+                - condition: template
+                  value_template: "{{ is_state(target_light, 'on') }}"
           then:
             - data:
                 brightness: "{{ brightness }}"
@@ -120,18 +110,21 @@ sequence:
               target:
                 entity_id: "{{ target_light }}"
               action: light.turn_on
+
   - if:
-      - condition: and
-        conditions:
-          - condition: template
-            value_template: "{{ light_timeout != 0 }}"
-          - condition: template
-            value_template: "{{ is_state(target_light, 'on') }}"
+      - condition: template
+        value_template: >-
+          {{ (((as_timestamp(now()) - start_time) / individual_step) | round(0, "ceil")) < steps }}
     then:
-      - delay:
-          minutes: "{{ light_timeout }}"
-      - data: {}
-        target:
-          entity_id: "{{ target_light }}"
-        action: light.turn_off
+      - variables:
+          response:
+            complete: false
+      - stop: "Return: light manual off"
+        response_variable: response
+    else:
+      - variables:
+          response: 
+            complete: true
+      - stop: "Return: Completed"
+        response_variable: response
 mode: parallel
